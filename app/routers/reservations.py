@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from app.models import Reservation
+from app.models import Reservation, Table  # Добавляем Table для проверки
 from app.schemas import Reservation as ReservationSchema, ReservationCreate
 from app.database import get_db
 from app.services import check_reservation_conflict
@@ -13,8 +13,16 @@ def get_reservations(db: Session = Depends(get_db)):
 
 @router.post("/", response_model=ReservationSchema)
 def create_reservation(reservation: ReservationCreate, db: Session = Depends(get_db)):
+    # Проверяем, существует ли столик с указанным table_id
+    table = db.query(Table).filter(Table.id == reservation.table_id).first()
+    if not table:
+        raise HTTPException(status_code=404, detail=f"Table with id {reservation.table_id} not found")
+
+    # Проверяем конфликт бронирования
     if check_reservation_conflict(db, reservation.table_id, reservation.reservation_time, reservation.duration_minutes):
         raise HTTPException(status_code=400, detail="Table is already reserved for this time slot")
+    
+    # Создаем бронь
     db_reservation = Reservation(**reservation.dict())
     db.add(db_reservation)
     db.commit()
